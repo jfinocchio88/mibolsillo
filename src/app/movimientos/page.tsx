@@ -12,23 +12,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-type Tipo = "INGRESO" | "EGRESO";
-
-type Movimiento = {
-  id: string;
-  tipo: Tipo;
-  descripcion: string;
-  monto: number; // positivo
-  fecha: Date;
-};
+import {
+  useMovStore,
+  Tipo,
+  CATEGORIAS_EGRESO,
+  CATEGORIAS_INGRESO,
+} from "@/store/movimientos";
 
 export default function MovimientosPage() {
   const [tipo, setTipo] = useState<Tipo>("EGRESO");
+  const [categoria, setCategoria] = useState<string>("");
   const [descripcion, setDescripcion] = useState("");
   const [monto, setMonto] = useState<string>("");
+  const [nota, setNota] = useState<string>("");
 
-  const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
+  const movimientos = useMovStore((s) => s.movimientos);
+  const add = useMovStore((s) => s.add);
+
+  const categorias = tipo === "EGRESO" ? CATEGORIAS_EGRESO : CATEGORIAS_INGRESO;
 
   const formatoARS = useMemo(
     () =>
@@ -53,30 +54,20 @@ export default function MovimientosPage() {
   function onAgregar(e: React.FormEvent) {
     e.preventDefault();
 
-    const montoNumero = Number(
-      monto.replace(".", "").replace(",", ".").trim()
-    );
+    const montoNumero = Number(monto.replace(/\./g, "").replace(",", "."));
 
-    if (!descripcion.trim()) {
-      alert("Falta la descripción");
-      return;
-    }
-    if (isNaN(montoNumero) || montoNumero <= 0) {
-      alert("Monto inválido. Usá números (ej: 2500 o 2.500,50).");
-      return;
-    }
+    if (!categoria) return alert("Elegí una categoría");
+    if (!descripcion.trim()) return alert("Falta la descripción");
+    if (!monto || isNaN(montoNumero) || montoNumero <= 0)
+      return alert("Monto inválido. Ej: 2500 o 2.500,50");
 
-    const nuevo: Movimiento = {
-      id: crypto.randomUUID(),
-      tipo,
-      descripcion: descripcion.trim(),
-      monto: montoNumero,
-      fecha: new Date(),
-    };
+    add({ tipo, categoria, descripcion, nota: nota.trim() || undefined, monto: montoNumero });
 
-    setMovimientos((prev) => [nuevo, ...prev]);
+    // limpiar
     setDescripcion("");
     setMonto("");
+    setNota("");
+    setCategoria("");
     setTipo("EGRESO");
   }
 
@@ -84,8 +75,8 @@ export default function MovimientosPage() {
     <section className="space-y-6">
       <h1 className="text-2xl font-bold">Movimientos</h1>
       <p className="text-muted-foreground">
-        Cargá ingresos y egresos para ir probando el flujo (solo en tu
-        navegador por ahora).
+        Cargá ingresos y egresos (con categoría y nota). Se comparten con el Dashboard y
+        quedan guardados en tu navegador.
       </p>
 
       {/* KPIs */}
@@ -122,10 +113,16 @@ export default function MovimientosPage() {
           <CardTitle className="text-lg">Agregar movimiento</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={onAgregar} className="grid gap-4 md:grid-cols-4">
+          <form onSubmit={onAgregar} className="grid gap-4 md:grid-cols-6">
             <div className="md:col-span-1">
               <Label className="mb-1 block">Tipo</Label>
-              <Select value={tipo} onValueChange={(v: Tipo) => setTipo(v)}>
+              <Select
+                value={tipo}
+                onValueChange={(v: Tipo) => {
+                  setTipo(v);
+                  setCategoria(""); // reiniciar categoría al cambiar tipo
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Elegí tipo" />
                 </SelectTrigger>
@@ -137,9 +134,25 @@ export default function MovimientosPage() {
             </div>
 
             <div className="md:col-span-2">
+              <Label className="mb-1 block">Categoría</Label>
+              <Select value={categoria} onValueChange={(v) => setCategoria(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Elegí categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categorias.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="md:col-span-2">
               <Label className="mb-1 block">Descripción</Label>
               <Input
-                placeholder="Ej: Super chino, Sueldo, Farmacia…"
+                placeholder="Ej: Super chino / Sueldo / Farmacia…"
                 value={descripcion}
                 onChange={(e) => setDescripcion(e.target.value)}
               />
@@ -155,7 +168,16 @@ export default function MovimientosPage() {
               />
             </div>
 
-            <div className="md:col-span-4">
+            <div className="md:col-span-6">
+              <Label className="mb-1 block">Nota (opcional)</Label>
+              <Input
+                placeholder="Detalle / referencia (opcional)"
+                value={nota}
+                onChange={(e) => setNota(e.target.value)}
+              />
+            </div>
+
+            <div className="md:col-span-6">
               <Button type="submit" className="w-full md:w-auto">
                 Agregar
               </Button>
@@ -164,7 +186,7 @@ export default function MovimientosPage() {
         </CardContent>
       </Card>
 
-      {/* Lista simple */}
+      {/* Lista */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">Últimos movimientos</CardTitle>
@@ -185,9 +207,14 @@ export default function MovimientosPage() {
                     <div className="font-medium">
                       {m.tipo === "EGRESO" ? "− " : "+ "}
                       {formatoARS.format(m.monto)} • {m.descripcion}
+                      {" "}
+                      <span className="text-xs text-muted-foreground">
+                        [{m.categoria ?? "Sin categoría"}]
+                      </span>
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {m.fecha.toLocaleString("es-AR")}
+                      {new Date(m.fecha).toLocaleString("es-AR")}
+                      {m.nota ? ` • ${m.nota}` : ""}
                     </div>
                   </div>
                   <span
