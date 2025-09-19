@@ -19,18 +19,48 @@ import {
   CATEGORIAS_INGRESO,
 } from "@/store/movimientos";
 
+/** Sentinel para el filtro de categoría "Todas" (evita SelectItem con value="") */
+const ALL_CATS = "__ALL__";
+
+/* Helpers */
+function diasDiff(aISO: string, b: Date) {
+  const a = new Date(aISO);
+  const diff = Math.abs(+b - +a);
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
+
 export default function MovimientosPage() {
+  /* ---------- Estado del formulario ---------- */
   const [tipo, setTipo] = useState<Tipo>("EGRESO");
   const [categoria, setCategoria] = useState<string>("");
   const [descripcion, setDescripcion] = useState("");
   const [monto, setMonto] = useState<string>("");
   const [nota, setNota] = useState<string>("");
 
+  /* ---------- Estado de filtros ---------- */
+  type FTipo = "TODOS" | "INGRESO" | "EGRESO";
+  type FRango = "todos" | "7" | "30";
+
+  const [fTipo, setFTipo] = useState<FTipo>("TODOS");
+  const [fCategoria, setFCategoria] = useState<string>(""); // "" = Todas
+  const [fTexto, setFTexto] = useState<string>("");
+  const [fRango, setFRango] = useState<FRango>("todos");
+
+  /* ---------- Store ---------- */
   const movimientos = useMovStore((s) => s.movimientos);
   const add = useMovStore((s) => s.add);
+  const clearAll = useMovStore((s) => s.clearAll);
 
-  const categorias = tipo === "EGRESO" ? CATEGORIAS_EGRESO : CATEGORIAS_INGRESO;
+  /* ---------- Categorías disponibles ---------- */
+  const categoriasDisponibles = useMemo(() => {
+    const fromData = Array.from(
+      new Set(movimientos.map((m) => m.categoria).filter(Boolean) as string[])
+    );
+    const base = tipo === "EGRESO" ? CATEGORIAS_EGRESO : CATEGORIAS_INGRESO;
+    return Array.from(new Set([...fromData, ...base]));
+  }, [movimientos, tipo]);
 
+  /* ---------- Formato moneda ---------- */
   const formatoARS = useMemo(
     () =>
       new Intl.NumberFormat("es-AR", {
@@ -41,6 +71,7 @@ export default function MovimientosPage() {
     []
   );
 
+  /* ---------- KPIs (no filtrados) ---------- */
   const totalIngreso = movimientos
     .filter((m) => m.tipo === "INGRESO")
     .reduce((acc, m) => acc + m.monto, 0);
@@ -51,17 +82,41 @@ export default function MovimientosPage() {
 
   const neto = totalIngreso - totalEgreso;
 
+  /* ---------- Filtrado ---------- */
+  const hoy = new Date();
+  const movFiltrados = useMemo(() => {
+    const q = fTexto.trim().toLowerCase();
+    return movimientos.filter((m) => {
+      if (fTipo !== "TODOS" && m.tipo !== fTipo) return false;
+      if (fCategoria && (m.categoria || "") !== fCategoria) return false;
+      if (q) {
+        const texto = `${m.descripcion} ${m.nota ?? ""}`.toLowerCase();
+        if (!texto.includes(q)) return false;
+      }
+      if (fRango !== "todos") {
+        const limite = Number(fRango); // 7 o 30
+        if (diasDiff(m.fecha, hoy) > limite) return false;
+      }
+      return true;
+    });
+  }, [movimientos, fTipo, fCategoria, fTexto, fRango]);
+
+  /* ---------- Submit ---------- */
   function onAgregar(e: React.FormEvent) {
     e.preventDefault();
-
     const montoNumero = Number(monto.replace(/\./g, "").replace(",", "."));
-
     if (!categoria) return alert("Elegí una categoría");
     if (!descripcion.trim()) return alert("Falta la descripción");
     if (!monto || isNaN(montoNumero) || montoNumero <= 0)
       return alert("Monto inválido. Ej: 2500 o 2.500,50");
 
-    add({ tipo, categoria, descripcion, nota: nota.trim() || undefined, monto: montoNumero });
+    add({
+      tipo,
+      categoria,
+      descripcion,
+      nota: nota.trim() || undefined,
+      monto: montoNumero,
+    });
 
     // limpiar
     setDescripcion("");
@@ -107,6 +162,101 @@ export default function MovimientosPage() {
         </Card>
       </div>
 
+      {/* Filtros */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Filtros</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-6">
+          {/* Tipo */}
+          <div className="md:col-span-1">
+            <Label className="mb-1 block">Tipo</Label>
+            <Select value={fTipo} onValueChange={(v: FTipo) => setFTipo(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="TODOS">Todos</SelectItem>
+                <SelectItem value="EGRESO">Egreso</SelectItem>
+                <SelectItem value="INGRESO">Ingreso</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Categoría (usa sentinel para "Todas") */}
+          <div className="md:col-span-2">
+            <Label className="mb-1 block">Categoría</Label>
+            <Select
+              value={fCategoria || ALL_CATS}
+              onValueChange={(v) => setFCategoria(v === ALL_CATS ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Todas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_CATS}>Todas</SelectItem>
+                {Array.from(new Set(categoriasDisponibles)).map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Texto */}
+          <div className="md:col-span-2">
+            <Label className="mb-1 block">Buscar (descripción/nota)</Label>
+            <Input
+              placeholder="Ej: sueldo, super, farmacia…"
+              value={fTexto}
+              onChange={(e) => setFTexto(e.target.value)}
+            />
+          </div>
+
+          {/* Rango */}
+          <div className="md:col-span-1">
+            <Label className="mb-1 block">Rango</Label>
+            <Select value={fRango} onValueChange={(v: FRango) => setFRango(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Rango" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                <SelectItem value="7">Últimos 7 días</SelectItem>
+                <SelectItem value="30">Últimos 30 días</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Botones */}
+          <div className="md:col-span-6 flex gap-2 pt-1">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setFTipo("TODOS");
+                setFCategoria("");
+                setFTexto("");
+                setFRango("todos");
+              }}
+            >
+              Limpiar filtros
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (confirm("¿Borrar TODOS los movimientos?")) clearAll();
+              }}
+            >
+              Borrar todo
+            </Button>
+            <div className="ml-auto text-sm text-muted-foreground self-center">
+              {movFiltrados.length} movimiento(s) mostrados
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Formulario */}
       <Card>
         <CardHeader className="pb-2">
@@ -120,7 +270,7 @@ export default function MovimientosPage() {
                 value={tipo}
                 onValueChange={(v: Tipo) => {
                   setTipo(v);
-                  setCategoria(""); // reiniciar categoría al cambiar tipo
+                  setCategoria(""); // reset al cambiar tipo
                 }}
               >
                 <SelectTrigger>
@@ -135,12 +285,15 @@ export default function MovimientosPage() {
 
             <div className="md:col-span-2">
               <Label className="mb-1 block">Categoría</Label>
-              <Select value={categoria} onValueChange={(v) => setCategoria(v)}>
+              <Select
+                value={categoria || undefined /* evita value="" en controlado */}
+                onValueChange={(v) => setCategoria(v)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Elegí categoría" />
                 </SelectTrigger>
                 <SelectContent>
-                  {categorias.map((c) => (
+                  {(tipo === "EGRESO" ? CATEGORIAS_EGRESO : CATEGORIAS_INGRESO).map((c) => (
                     <SelectItem key={c} value={c}>
                       {c}
                     </SelectItem>
@@ -186,19 +339,19 @@ export default function MovimientosPage() {
         </CardContent>
       </Card>
 
-      {/* Lista */}
+      {/* Lista filtrada */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-lg">Últimos movimientos</CardTitle>
+          <CardTitle className="text-lg">Resultados</CardTitle>
         </CardHeader>
         <CardContent>
-          {movimientos.length === 0 ? (
+          {movFiltrados.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Todavía no cargaste movimientos.
+              No hay movimientos con los filtros actuales.
             </p>
           ) : (
             <div className="space-y-2">
-              {movimientos.map((m) => (
+              {movFiltrados.map((m) => (
                 <div
                   key={m.id}
                   className="flex items-center justify-between rounded-md border p-3"
@@ -206,8 +359,7 @@ export default function MovimientosPage() {
                   <div>
                     <div className="font-medium">
                       {m.tipo === "EGRESO" ? "− " : "+ "}
-                      {formatoARS.format(m.monto)} • {m.descripcion}
-                      {" "}
+                      {formatoARS.format(m.monto)} • {m.descripcion}{" "}
                       <span className="text-xs text-muted-foreground">
                         [{m.categoria ?? "Sin categoría"}]
                       </span>
