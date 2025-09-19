@@ -1,103 +1,213 @@
-import Image from "next/image";
+"use client";
+
+import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+type Tipo = "INGRESO" | "EGRESO";
+
+type Movimiento = {
+  id: string;
+  tipo: Tipo;
+  descripcion: string;
+  monto: number; // positivo
+  fecha: Date;
+};
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [tipo, setTipo] = useState<Tipo>("EGRESO");
+  const [descripcion, setDescripcion] = useState("");
+  const [monto, setMonto] = useState<string>("");
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+  // Lista en memoria para esta demo (todavía sin base de datos)
+  const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
+
+  const formatoARS = useMemo(
+    () =>
+      new Intl.NumberFormat("es-AR", {
+        style: "currency",
+        currency: "ARS",
+        minimumFractionDigits: 2,
+      }),
+    []
+  );
+
+  const totalIngreso = movimientos
+    .filter((m) => m.tipo === "INGRESO")
+    .reduce((acc, m) => acc + m.monto, 0);
+
+  const totalEgreso = movimientos
+    .filter((m) => m.tipo === "EGRESO")
+    .reduce((acc, m) => acc + m.monto, 0);
+
+  const neto = totalIngreso - totalEgreso;
+
+  function onAgregar(e: React.FormEvent) {
+    e.preventDefault();
+
+    const montoNumero = Number(
+      monto.replace(".", "").replace(",", ".").trim()
+    );
+
+    // Validaciones simples
+    if (!descripcion.trim()) {
+      alert("Falta la descripción");
+      return;
+    }
+    if (isNaN(montoNumero) || montoNumero <= 0) {
+      alert("Montó inválido. Usá números (ej: 2500 o 2.500,50).");
+      return;
+    }
+
+    const nuevo: Movimiento = {
+      id: crypto.randomUUID(),
+      tipo,
+      descripcion: descripcion.trim(),
+      monto: montoNumero,
+      fecha: new Date(),
+    };
+
+    setMovimientos((prev) => [nuevo, ...prev]);
+    // Limpiar formulario
+    setDescripcion("");
+    setMonto("");
+    setTipo("EGRESO");
+  }
+
+  return (
+    <main className="min-h-dvh p-6 max-w-4xl mx-auto space-y-6">
+      <h1 className="text-3xl font-bold">💰 MiBolsillo</h1>
+      <p className="text-muted-foreground">
+        Cargá un movimiento para ir probando el flujo (solo visible en tu
+        pantalla por ahora).
+      </p>
+
+      {/* KPIs */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-base">Ingresos</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">
+            {formatoARS.format(totalIngreso)}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-base">Egresos</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">
+            {formatoARS.format(totalEgreso)}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-base">Neto</CardTitle>
+          </CardHeader>
+          <CardContent className="text-2xl font-semibold">
+            {formatoARS.format(neto)}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Formulario */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Agregar movimiento</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={onAgregar} className="grid gap-4 md:grid-cols-4">
+            <div className="md:col-span-1">
+              <Label className="mb-1 block">Tipo</Label>
+              <Select value={tipo} onValueChange={(v: Tipo) => setTipo(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Elegí tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="EGRESO">Egreso</SelectItem>
+                  <SelectItem value="INGRESO">Ingreso</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="md:col-span-2">
+              <Label className="mb-1 block">Descripción</Label>
+              <Input
+                placeholder="Ej: Super chino, Sueldo, Farmacia…"
+                value={descripcion}
+                onChange={(e) => setDescripcion(e.target.value)}
+              />
+            </div>
+
+            <div className="md:col-span-1">
+              <Label className="mb-1 block">Monto (ARS)</Label>
+              <Input
+                inputMode="decimal"
+                placeholder="Ej: 2500,50"
+                value={monto}
+                onChange={(e) => setMonto(e.target.value)}
+              />
+            </div>
+
+            <div className="md:col-span-4">
+              <Button type="submit" className="w-full md:w-auto">
+                Agregar
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Lista simple */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Últimos movimientos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {movimientos.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Todavía no cargaste movimientos.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {movimientos.map((m) => (
+                <div
+                  key={m.id}
+                  className="flex items-center justify-between rounded-md border p-3"
+                >
+                  <div>
+                    <div className="font-medium">
+                      {m.tipo === "EGRESO" ? "− " : "+ "}
+                      {formatoARS.format(m.monto)} • {m.descripcion}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {m.fecha.toLocaleString("es-AR")}
+                    </div>
+                  </div>
+                  <span
+                    className={`text-xs rounded px-2 py-1 ${
+                      m.tipo === "EGRESO"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-green-100 text-green-700"
+                    }`}
+                  >
+                    {m.tipo}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </main>
   );
 }
